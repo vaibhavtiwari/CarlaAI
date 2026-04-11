@@ -149,7 +149,7 @@ class UI():
         filepath = askopenfilename()
         if filepath is not None:
             frame = preprocess_frame(np.asarray(Image.open(filepath)))
-            z = vae.sess.run(vae.sample, feed_dict={vae.input_states: [frame]})[0]
+            z = vae.sample_latent([frame])[0]
             for i in range(len(self.z_vars)):
                 self.z_vars[i].set(z[i])
                 self.update_label_fns[i](generate=False)

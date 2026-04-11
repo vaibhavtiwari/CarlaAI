@@ -3,7 +3,7 @@ import shutil
 import subprocess
 
 import carla
-import gym
+import gymnasium as gym
 import pygame
 from PIL import Image
 from pygame.locals import *
@@ -160,7 +160,7 @@ class CarlaDataCollector:
             self.dashcam_seg = Camera(self.world, out_width, out_height,
                                       transform=camera_transforms["dashboard"],
                                       attach_to=self.vehicle, on_recv_image=lambda e: self._set_observation_image("segmentation", e),
-                                      camera_type="sensor.camera.semantic_segmentation")#, color_converter=carla.ColorConverter.CityScapesPalette)
+                                      camera_type="sensor.camera.semantic_segmentation", color_converter=carla.ColorConverter.CityScapesPalette)
             self.camera  = Camera(self.world, width, height,
                                   transform=camera_transforms["spectator"],
                                   attach_to=self.vehicle, on_recv_image=lambda e: self._set_viewer_image(e))

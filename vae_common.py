@@ -9,7 +9,7 @@ def load_vae(model_dir, z_dim=None, model_type=None):
     """
     
     # Parse z_dim and model_type from name if None
-    if z_dim is None: z_dim = int(re.findall("zdim(\d+)", model_dir)[0])
+    if z_dim is None: z_dim = int(re.findall(r"zdim(\d+)", model_dir)[0])
     if model_type is None: model_type = "mlp" if "mlp" in model_dir else "cnn"
     VAEClass = MlpVAE if model_type == "mlp" else ConvVAE
     target_depth = 1 if "seg_" in model_dir else 3
@@ -18,7 +18,7 @@ def load_vae(model_dir, z_dim=None, model_type=None):
     vae_source_shape = np.array([80, 160, 3])
     vae = VAEClass(source_shape=vae_source_shape,
                    target_shape=np.array([80, 160, target_depth]),
-                   z_dim=z_dim, models_dir="vae",
+                   z_dim=z_dim,
                    model_dir=model_dir,
                    training=False)
     vae.init_session(init_logging=False)

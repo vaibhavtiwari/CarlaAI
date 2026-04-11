@@ -82,9 +82,8 @@ class LocalPlanner(object):
         self._init_controller(opt_dict)
 
     def __del__(self):
-        if self._vehicle:
-            self._vehicle.destroy()
-        print("Destroying ego-vehicle!")
+        # Avoid destroying the vehicle here because cleanup should manage actor destruction.
+        pass
 
     def reset_vehicle(self):
         self._vehicle = None
@@ -181,10 +180,14 @@ class LocalPlanner(object):
 
     def set_global_plan(self, current_plan):
         self._waypoints_queue.clear()
+        self._waypoint_buffer.clear()
         for elem in current_plan:
             self._waypoints_queue.append(elem)
         self._target_road_option = RoadOption.LANEFOLLOW
         self._global_plan = True
+
+    def is_global_plan_complete(self):
+        return self._global_plan and len(self._waypoints_queue) == 0 and len(self._waypoint_buffer) == 0
 
     def run_step(self, debug=True):
         """

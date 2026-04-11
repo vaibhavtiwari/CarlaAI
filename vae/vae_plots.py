@@ -5,31 +5,45 @@ import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import argparse
+import re
 from PIL import Image, ImageTk
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-import gzip
-import pickle
 from train_vae import preprocess_rgb_frame
 
 from models import MlpVAE, ConvVAE
 
-import tensorflow as tf
-
 parser = argparse.ArgumentParser(description="Visualizes the features learned by the VAE")
-parser.add_argument("--model_dir", type=str, required=True)
+parser.add_argument(
+    "--model_dir",
+    type=str,
+    required=True,
+    help="Path to a trained VAE model directory, e.g. models/seg_bce_cnn_zdim64_beta1_kl_tolerance0.0_my_data_autopilot",
+)
 parser.add_argument("--model_type", type=str, default="cnn")
 parser.add_argument("--z_dim", type=int, default=64)
 args = parser.parse_args()
+args.model_dir = os.path.normpath(args.model_dir)
+checkpoint_dir = os.path.join(args.model_dir, "checkpoints")
+
+if not os.path.isdir(args.model_dir):
+    raise FileNotFoundError(f'Model directory "{args.model_dir}" does not exist.')
+if not os.path.isdir(checkpoint_dir):
+    raise FileNotFoundError(
+        f'Expected checkpoints under "{checkpoint_dir}", but that directory does not exist.'
+    )
 
 seg_as_target = "seg_" in args.model_dir
 source_shape = (80, 160, 3)
 target_shape = (80, 160, 1 if seg_as_target else 3)
 
-beta = int(re.findall("beta(\d+)", args.model_dir)[0])
+beta_match = re.search(r"beta(\d+)", args.model_dir)
+beta = int(beta_match.group(1)) if beta_match else None
 loss_type = "MSE" if "mse_" in args.model_dir else "BCE"
 
-title = "{}; {}; $z_{{dim}}={}$; $\\beta={}$".format(loss_type, args.model_type.upper(), args.z_dim, beta)
+title_parts = [loss_type, args.model_type.upper(), f"$z_{{dim}}={args.z_dim}$"]
+if beta is not None:
+    title_parts.append(f"$\\beta={beta}$")
+title = "; ".join(title_parts)
 
 if args.model_type == "cnn": VAEClass = ConvVAE
 elif args.model_type == "mlp": VAEClass = MlpVAE    
@@ -38,10 +52,21 @@ else: raise Exception("No model type \"{}\"".format(args.model_type))
 vae = VAEClass(source_shape, target_shape, z_dim=args.z_dim, model_dir=args.model_dir, training=False)
 vae.init_session(init_logging=False)
 if not vae.load_latest_checkpoint():
-    print("Failed to load latest checkpoint for model \"{}\"".format(args.model_dir))
+    raise FileNotFoundError(
+        "Failed to load a VAE checkpoint from \"{}\". Expected checkpoint files inside \"{}\".".format(
+            args.model_dir, checkpoint_dir
+        )
+    )
 
-#image = preprocess_rgb_frame(np.asarray(Image.open("data_old/rgb/1535.png")))
-image = preprocess_rgb_frame(np.asarray(Image.open("data/rgb/0.png")))
+#image = preprocess_rgb_frame(np.asarray(Image.open("data_old/rgb/1535.png").resize((source_shape[1], source_shape[0]), resample=Image.BILINEAR)))
+image = preprocess_rgb_frame(
+    np.asarray(
+        Image.open("my_data_autopilot/rgb/frame_000000.png").resize(
+            (source_shape[1], source_shape[0]),
+            resample=Image.BILINEAR,
+        )
+    )
+)
 
 z_range = 10
 
@@ -75,7 +100,7 @@ fig, ax = plt.subplots(min(16, args.z_dim), int(np.ceil(args.z_dim / 16)), share
 if len(ax.shape) == 1:
     ax = np.expand_dims(ax, axis=-1)
 
-seeded_z = vae.sess.run(vae.sample, feed_dict={vae.source_states: [image]})[0]
+seeded_z = vae.sample_latent(np.expand_dims(image, axis=0))[0]
 for k in range(int(np.ceil(args.z_dim / 16))):
     for i in range(16):
         z_index = i + k * 16
@@ -87,7 +112,7 @@ for k in range(int(np.ceil(args.z_dim / 16))):
         for j, zi in enumerate(np.linspace(-z_range, z_range, 5)):
             z = seeded_z.copy()
             z[z_index] += zi
-            generated_image = vae.generate_from_latent([z])[0].reshape(h, w, target_shape[-1])
+            generated_image = vae.generate_from_latent(np.expand_dims(z, axis=0))[0].reshape(h, w, target_shape[-1])
             if seg_as_target:
                 generated_image = image_to_city_scapes(generated_image)
             compound_image[:, j*w:(j+1)*w, :] = generated_image
