@@ -1,0 +1,15 @@
+{
+  "test": "Autopilot Route Collector",
+  "manual_scenario": "Lap",
+  "host": "127.0.0.1",
+  "port": 2000,
+  "fps": 30,
+  "viewer_res": "1280x720",
+  "obs_res": "640x360",
+  "num_images": 500,
+  "output_dir": "images/lab_run",
+  "target_speed": 20.0,
+  "start_carla": false,
+  "synchronous": true,
+  "show_waypoints": true
+}

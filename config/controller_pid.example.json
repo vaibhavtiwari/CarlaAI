@@ -1,0 +1,13 @@
+{
+  "controller": "pid",
+  "host": "127.0.0.1",
+  "port": 2000,
+  "viewer_res": "1280x720",
+  "obs_res": "160x80",
+  "show_waypoints": 1,
+  "synchronous": 1,
+  "fps": 30,
+  "target_speed": 20.0,
+  "episodes": 1,
+  "summary_path": "models/controller_runs/pid_route_summary.json"
+}

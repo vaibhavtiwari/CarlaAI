@@ -114,10 +114,28 @@ python3 -m SegFormer.evaluation \
 python train.py --model_name name_of_your_model -start_carla
 ```
 
+Or use a JSON config:
+
+```bash
+python train.py --config config/train.example.json
+```
+
 Evaluate a trained PPO agent:
 
 ```bash
 python run_eval.py --model_name pretrained_agent -start_carla
+```
+
+Or use a JSON config:
+
+```bash
+python run_eval.py --config config/eval.example.json
+```
+
+Run the classical PID controller baseline on the route environment:
+
+```bash
+python run_controller.py --config config/controller_pid.example.json
 ```
 
 Inspect policy behavior:
@@ -141,6 +159,20 @@ python inspect_agent.py --model_name name_of_your_model
 ### PPO
 
 - checkpoints, videos, and logs are stored under `models/<model_name>/`
+
+## Config Files
+
+The main entry points now support `--config <path>` with flat JSON config files.
+
+Examples:
+
+- `config/train.example.json`
+- `config/eval.example.json`
+- `config/autopilot_collector.example.json`
+- `config/controller_pid.example.json`
+- `config/lab.example.json`
+
+The CARLA Env Lab can also save and load launcher setups as JSON through its `Save Setup` and `Load Setup` buttons.
 
 ## Repo Structure
 

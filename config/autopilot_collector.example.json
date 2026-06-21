@@ -1,0 +1,14 @@
+{
+  "host": "127.0.0.1",
+  "port": 2000,
+  "viewer_res": "1280x720",
+  "obs_res": "640x360",
+  "synchronous": 1,
+  "fps": 30,
+  "num_images": 500,
+  "output_dir": "images/autopilot_run",
+  "target_speed": 20.0,
+  "frame_skip": 2,
+  "min_save_distance": 1.0,
+  "min_route_distance": 100.0
+}
