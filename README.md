@@ -1,98 +1,98 @@
 # CarlaAI
 
-CarlaAI is a CARLA-based autonomous driving research repository that combines:
+## Short Project Summary
 
-- PPO training for end-to-end driving agents
-- VAE-based state representation learning
-- SegFormer-based semantic segmentation with transfer learning
-- interactive inspection tools for learned reconstructions and segmentation outputs
+CarlaAI is a lightweight CARLA-based autonomous driving research repository for experimenting with both classical controllers and learning-based methods in a shared environment stack.
 
-The repo is centered around CARLA driving experiments, with support for data collection, perception model training, policy training, evaluation, and visualization.
+The repo currently brings together:
 
-## What This Repo Provides
+- CARLA route/lap environments with visualization and debugging support
+- classical controller baselines such as PID and kinematic MPC
+- PPO training and evaluation code
+- VAE-based representation learning
+- SegFormer-based semantic segmentation tooling
+- data collection and inspection utilities
 
-- Gym-like CARLA environments for lap-following and route-following tasks
-- PPO training and evaluation scripts for autonomous driving agents
-- VAE training on RGB or semantic segmentation targets
-- SegFormer fine-tuning on CARLA semantic segmentation data
-- TensorBoard logging for perception model experiments
-- Interactive inspectors for VAE reconstructions and SegFormer predictions
-- Utilities for collecting paired RGB and segmentation data from CARLA
 
-## Main Components
+## What the Repo Currently Provides
 
-### PPO and CARLA Environments
+- Gym-like CARLA environments for route-following and lap-following tasks
+- PID and modular kinematic MPC controller baselines
+- PPO training and evaluation entry points
+- VAE training and reconstruction inspection tools
+- SegFormer training, evaluation, inference, and inspection tools
+- Route/HUD/debug overlays and controller trace logging
+- JSON-config-driven experiment entry points
 
-- [train.py](train.py): train a PPO driving agent
-- [run_eval.py](run_eval.py): run a trained agent in evaluation mode
-- [ppo.py](ppo.py): PPO model definition
-- [reward_functions.py](reward_functions.py): reward shaping logic
-- [CarlaEnv/](CarlaEnv): CARLA environments, data collection, planners, wrappers, and HUD code
+## Main Workflows
 
-### VAE Workflow
+### Run a Classical Controller
 
-- [vae/train_vae.py](vae/train_vae.py): train a VAE on RGB frames or segmentation targets
-- [vae/inspect_vae.py](vae/inspect_vae.py): interactive viewer for VAE reconstructions
-- [vae/models.py](vae/models.py): VAE architectures and losses
+PID baseline:
 
-### SegFormer Workflow
-
-- [SegFormer/train.py](SegFormer/train.py): fine-tune SegFormer on CARLA semantic segmentation
-- [SegFormer/evaluation.py](SegFormer/evaluation.py): evaluate a trained checkpoint on the validation split
-- [SegFormer/inference.py](SegFormer/inference.py): run prediction on a single image
-- [SegFormer/inspect_segformer.py](SegFormer/inspect_segformer.py): interactive viewer for RGB, ground truth, prediction, and overlay
-
-## Data Layout
-
-The perception pipelines expect CARLA data arranged like this:
-
-```text
-dataset_root/
-├── rgb/
-└── segmentation/
+```bash
+python run_controller.py --config config/controller_pid.example.json
 ```
 
-For the current setup in this repo:
+Kinematic MPC baseline:
 
-- RGB images are stored at `1280x720`
-- SegFormer training uses aspect-ratio-preserving resize plus padding to `512x512`
-- segmentation masks are converted from CARLA semantic colors into the repo's 13-class label set
+```bash
+python run_controller.py --config config/controller_mpc.example.json
+```
 
-## Typical Workflows
+Analyze an MPC debug trace:
 
-### 1. Collect Data
+```bash
+python analyze_mpc_run.py models/controller_runs/mpc_route_debug.json
+```
+
+### Train and Evaluate PPO
+
+Train:
+
+```bash
+python train.py --config config/train.example.json
+```
+
+Evaluate:
+
+```bash
+python run_eval.py --config config/eval.example.json
+```
+
+Inspect a trained policy:
+
+```bash
+python inspect_agent.py --model_name name_of_your_model
+```
+
+### Collect Data
 
 ```bash
 python CarlaEnv/collect_data.py --output_dir vae/my_data -start_carla
 ```
 
-### 2. Train a VAE
+### Train a VAE
 
 ```bash
 cd vae
 python train_vae.py --model_name my_trained_vae --dataset my_data
 ```
 
-Launch the VAE inspector:
+Inspect reconstructions:
 
 ```bash
 cd vae
 python inspect_vae.py --model_dir models/my_trained_vae
 ```
 
-### 3. Train SegFormer
+### Train SegFormer
 
 ```bash
 python3 -m SegFormer.train --dataset_dir vae/my_data_autopilot --num_workers 8
 ```
 
-TensorBoard:
-
-```bash
-tensorboard --logdir models/segformer/logs
-```
-
-Interactive segmentation inspector:
+Inspect predictions:
 
 ```bash
 python3 -m SegFormer.inspect_segformer \
@@ -100,7 +100,7 @@ python3 -m SegFormer.inspect_segformer \
   --dataset_dir vae/my_data_autopilot
 ```
 
-Validation metrics:
+Evaluate:
 
 ```bash
 python3 -m SegFormer.evaluation \
@@ -108,75 +108,27 @@ python3 -m SegFormer.evaluation \
   --dataset_dir vae/my_data_autopilot
 ```
 
-### 4. Train a PPO Agent
+## Repo Structure
 
-```bash
-python train.py --model_name name_of_your_model -start_carla
+```text
+CarlaAI/
+├── CarlaEnv/          # CARLA environments, planners, HUD, wrappers, controllers
+├── CarlaEnv/mpc/      # modular kinematic MPC implementation
+├── SegFormer/         # semantic segmentation workflow
+├── vae/               # VAE workflow
+├── config/            # example JSON configs
+├── doc/               # notes, write-up, figures
+├── models/            # checkpoints and logs
+├── train.py           # PPO training
+├── run_eval.py        # PPO evaluation
+├── run_controller.py  # PID/MPC controller runs
+├── inspect_agent.py   # PPO behavior inspection
+└── analyze_mpc_run.py # MPC debug-trace analysis
 ```
 
-Or use a JSON config:
+## Config / Examples
 
-```bash
-python train.py --config config/train.example.json
-```
-
-Evaluate a trained PPO agent:
-
-```bash
-python run_eval.py --model_name pretrained_agent -start_carla
-```
-
-Or use a JSON config:
-
-```bash
-python run_eval.py --config config/eval.example.json
-```
-
-Run the classical PID controller baseline on the route environment:
-
-```bash
-python run_controller.py --config config/controller_pid.example.json
-```
-
-Run the learning-oriented kinematic MPC baseline on the route environment:
-
-```bash
-python run_controller.py --config config/controller_mpc.example.json
-```
-
-Analyze an MPC debug trace after a run:
-
-```bash
-python analyze_mpc_run.py models/controller_runs/mpc_route_debug.json
-```
-
-With the current MPC logging flow, each episode/route is also saved as its own debug and summary JSON file, which makes route-by-route analysis easier.
-
-Inspect policy behavior:
-
-```bash
-python inspect_agent.py --model_name name_of_your_model
-```
-
-## Logging and Checkpoints
-
-### SegFormer
-
-- checkpoints: `models/segformer/best_model.pt` and `models/segformer/last_model.pt`
-- TensorBoard logs: `models/segformer/logs`
-- tracked metrics: loss, mIoU, pixel accuracy, epoch timing, throughput
-
-### VAE
-
-- checkpoints and TensorBoard logs are stored under `vae/models/`
-
-### PPO
-
-- checkpoints, videos, and logs are stored under `models/<model_name>/`
-
-## Config Files
-
-The main entry points now support `--config <path>` with flat JSON config files.
+Main entry points support `--config <path>` with flat JSON config files.
 
 Examples:
 
@@ -187,57 +139,12 @@ Examples:
 - `config/controller_mpc.example.json`
 - `config/lab.example.json`
 
-The CARLA Env Lab can also save and load launcher setups as JSON through its `Save Setup` and `Load Setup` buttons.
-
-## Repo Structure
-
-```text
-CarlaAI/
-├── CarlaEnv/        # CARLA envs, data collection, planners, wrappers
-├── SegFormer/       # semantic segmentation training, eval, inference, UI
-├── vae/             # VAE training and inspection tools
-├── models/          # PPO checkpoints and logs
-├── doc/             # write-up and figures
-├── train.py         # PPO training entry point
-├── run_eval.py      # PPO evaluation entry point
-├── inspect_agent.py # PPO policy inspection UI
-└── vae_common.py    # VAE/PPO shared state-encoding utilities
-```
-
-## Notes on the Current SegFormer Setup
-
-- transfer learning is used rather than training from scratch
-- the pretrained backbone comes from Hugging Face SegFormer checkpoints
-- the classifier head is adapted from the pretrained label count to the repo's 13 CARLA classes
-- preprocessing uses aspect-ratio-preserving resize and padding instead of direct stretching
-
-## Base Repository and Citation
-
-This repository is based on the original `bitsauce/Carla-ppo` implementation. The current branch history includes an import of that codebase and extends it with additional perception workflows, updated datasets, and SegFormer-based semantic segmentation.
-
-Base repository:
-
-- `bitsauce/Carla-ppo`: https://github.com/bitsauce/Carla-ppo
-
-If you use this repo, please also cite or acknowledge the original base repository alongside your modifications.
-
-## Related References
-
-- CARLA simulator: https://carla.org/
-- Project write-up in this repo: [doc/Accelerating_Training_of_DeepRL_Based_AV_Agents_Through_Env_Designs.pdf](doc/Accelerating_Training_of_DeepRL_Based_AV_Agents_Through_Env_Designs.pdf)
-- Learning to Drive in a Day: https://arxiv.org/abs/1807.00412
-- End-to-end Driving via Conditional Imitation Learning: https://arxiv.org/abs/1710.02410
-
-## Status
-
-Currently working in this repo:
-
-- latent-state learning with a VAE
-- supervised semantic segmentation with SegFormer
-- the original PPO training codebase and CARLA environment stack
+The controller flow uses shared defaults from [CarlaEnv/config.py](CarlaEnv/config.py), so controller runtime settings such as target speed, MPC horizon, and MPC `dt` can be managed centrally and overridden when needed.
 
 ## TODO
 
-- test PPO end-to-end against the current codebase state
-- integrate PPO cleanly with the newer perception-side changes
-- evaluate how SegFormer or segmentation-derived state representations should feed into PPO
+- implement a dynamic-model MPC baseline
+- add obstacle-aware MPC constraints and avoidance logic
+- integrate PPO more cleanly with the newer environment/controller baseline
+- improve shared metrics for comparing PID, MPC, and PPO runs
+- continue extending the repo toward a lightweight hybrid experimentation framework
