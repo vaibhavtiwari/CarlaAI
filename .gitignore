@@ -105,7 +105,14 @@ venv.bak/
 
 # vscode
 /.vscode/
+/.codex
 
 # model folders
 /models/*
 !/models/pretrained_agent/
+
+# Local CARLA/data artifacts
+images/
+*.whl
+vae/my_data_autopilot/
+vae/models/

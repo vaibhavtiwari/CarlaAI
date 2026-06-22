@@ -81,6 +81,7 @@ class CarlaBaseEnv(gym.Env):
         self.clock = pygame.time.Clock()
         self.synchronous = synchronous
         self.viewer_res = viewer_res
+        self.debug_enabled = os.environ.get("CARLA_ENV_DEBUG", "0") == "1"
 
         self.seed()
         self.action_space = gym.spaces.Box(np.array([-1, 0]), np.array([1, 1]), dtype=np.float32)
@@ -101,7 +102,12 @@ class CarlaBaseEnv(gym.Env):
         self.bev_height = min(self.bev_width, available_bev_height)
         self.observation = self.observation_buffer = None
         self.viewer_image = self.viewer_image_buffer = None
+        self.last_observation_frame = None
+        self.last_viewer_frame = None
+        self.observation_frames_received = 0
+        self.viewer_frames_received = 0
         try:
+            self._debug("Initializing CARLA base env")
             self.client = carla.Client(host, port)
             self.client.set_timeout(60.0)
 
@@ -109,7 +115,9 @@ class CarlaBaseEnv(gym.Env):
             if self.synchronous:
                 settings = self.world.get_settings()
                 settings.synchronous_mode = True
+                settings.fixed_delta_seconds = 1.0 / self.fps
                 self.world.apply_settings(settings)
+                self._debug(f"Applied synchronous settings with fixed_delta_seconds={1.0 / self.fps:.4f}")
 
             self.road_overlay_segments = build_road_overlay_segments(self.world.map)
 
@@ -145,6 +153,12 @@ class CarlaBaseEnv(gym.Env):
             )
 
             self._post_world_init()
+            self._debug("Post world init complete")
+            self._prime_sensor_buffers()
+            self._debug(
+                f"Initial sensor warmup complete: obs_frames={self.observation_frames_received}, "
+                f"viewer_frames={self.viewer_frames_received}"
+            )
         except Exception as e:
             self.close()
             raise e
@@ -188,9 +202,15 @@ class CarlaBaseEnv(gym.Env):
         return [seed]
 
     def reset(self, is_training=False):
+        self._debug(f"Reset start (is_training={is_training})")
         self._reset_task(is_training=is_training)
         self._reset_episode_state(is_training=is_training)
         self._refresh_route_visuals()
+        self._prime_sensor_buffers()
+        self._debug(
+            f"Reset warmup complete: obs_frames={self.observation_frames_received}, "
+            f"viewer_frames={self.viewer_frames_received}"
+        )
         return self.step(None)[0]
 
     def _reset_episode_state(self, is_training):
@@ -224,6 +244,10 @@ class CarlaBaseEnv(gym.Env):
         self.closed = True
 
     def render(self, mode="human"):
+        self._debug(
+            f"Render call: viewer={'set' if self.viewer_image is not None else 'none'}, "
+            f"obs={'set' if self.observation is not None else 'none'}"
+        )
         maneuver = self._get_maneuver_name()
         self.extra_info.extend(
             [
@@ -261,24 +285,33 @@ class CarlaBaseEnv(gym.Env):
                 'Check for info["closed"] == True in the learning loop.'
             )
 
+        self._debug(f"Step start #{self.step_count + 1} action={'none' if action is None else 'provided'}")
         self._before_step()
         self._update_clock_before_tick(action)
         self._apply_action(action)
+        self._tick_world()
+        self._debug(
+            f"Post tick: obs_frames={self.observation_frames_received}, "
+            f"viewer_frames={self.viewer_frames_received}"
+        )
 
-        self.hud.tick(self.world, self.clock)
-        self.world.tick()
-
-        if self.synchronous:
-            self.clock.tick()
-            while True:
-                try:
-                    self.world.wait_for_tick(seconds=1.0 / self.fps + 0.1)
-                    break
-                except Exception:
-                    self.world.tick()
-
-        self.observation = self._get_observation()
-        self.viewer_image = self._get_viewer_image()
+        self.observation = self._get_observation(timeout=2.0)
+        self.viewer_image = self._get_viewer_image(timeout=2.0)
+        if self.observation is None or self.viewer_image is None:
+            self.terminal_reason = "Sensor frame timeout"
+            self.terminal_state = True
+            print("! Sensor frame timeout in CarlaBaseEnv.step()")
+            self._debug("Step aborted due to sensor frame timeout")
+            empty_state = np.zeros(self.observation_space.shape, dtype=np.float32)
+            return empty_state, 0.0, self.terminal_state, {
+                "closed": self.closed,
+                "episode_summary": None,
+                "step_metrics": None,
+            }
+        self._debug(
+            f"Frames ready: obs_shape={getattr(self.observation, 'shape', None)}, "
+            f"viewer_shape={getattr(self.viewer_image, 'shape', None)}"
+        )
         encoded_state = self.encode_state_fn(self)
 
         transform = self.vehicle.get_transform()
@@ -314,14 +347,7 @@ class CarlaBaseEnv(gym.Env):
         return encoded_state, self.last_reward, self.terminal_state, info
 
     def _update_clock_before_tick(self, action):
-        if self.synchronous:
-            return
-        if self.fps <= 0:
-            self.clock.tick()
-        else:
-            self.clock.tick_busy_loop(self.fps)
-        if action is not None:
-            self.average_fps = self.average_fps * 0.5 + self.clock.get_fps() * 0.5
+        return
 
     def _apply_action(self, action):
         if action is None:
@@ -364,17 +390,21 @@ class CarlaBaseEnv(gym.Env):
         self.speed_accum += self.vehicle.get_speed()
 
     def _wait_for_reset(self):
+        self._debug(f"Wait for reset start (synchronous={self.synchronous}, fps={self.fps})")
         if self.synchronous:
-            ticks = 0
-            while ticks < self.fps * 2:
-                self.world.tick()
-                try:
-                    self.world.wait_for_tick(seconds=1.0 / self.fps + 0.1)
-                    ticks += 1
-                except Exception:
-                    pass
+            for _ in range(max(3, min(self.fps // 2, 10))):
+                self._tick_world()
         else:
-            time.sleep(2.0)
+            time.sleep(0.25)
+        self._debug("Wait for reset complete")
+
+    def _prime_sensor_buffers(self):
+        warmup_ticks = 3 if self.synchronous else 1
+        self._debug(f"Priming sensor buffers for {warmup_ticks} ticks")
+        for _ in range(warmup_ticks):
+            self._tick_world()
+        self._get_observation(timeout=0.5)
+        self._get_viewer_image(timeout=0.5)
 
     def _soft_reset_vehicle(self):
         self.vehicle.control.steer = float(0.0)
@@ -392,20 +422,48 @@ class CarlaBaseEnv(gym.Env):
             return "Straight"
         if self.current_road_maneuver == RoadOption.VOID:
             return "VOID"
-        return "INVALID(%i)" % self.current_road_maneuver
+        fallback_name = getattr(self.current_road_maneuver, "name", None)
+        if fallback_name:
+            return str(fallback_name).replace("_", " ").title()
+        return "INVALID(%s)" % str(self.current_road_maneuver)
 
-    def _get_observation(self):
+    def _tick_world(self):
+        if self.synchronous:
+            self.clock.tick()
+            self.world.tick()
+            try:
+                self.world.wait_for_tick(seconds=1.0 / self.fps + 0.2)
+            except Exception:
+                pass
+        else:
+            if self.fps <= 0:
+                self.clock.tick()
+            else:
+                self.clock.tick_busy_loop(self.fps)
+            self.world.tick()
+            if self.fps > 0:
+                time.sleep(1.0 / self.fps)
+            self.average_fps = self.average_fps * 0.5 + self.clock.get_fps() * 0.5
+        self.hud.tick(self.world, self.clock)
+
+    def _get_observation(self, timeout=2.0):
+        deadline = time.time() + timeout
         while self.observation_buffer is None:
-            pass
+            if time.time() >= deadline:
+                return None if self.last_observation_frame is None else self.last_observation_frame.copy()
+            time.sleep(0.001)
         obs = self.observation_buffer.copy()
-        self.observation_buffer = None
+        self.last_observation_frame = obs.copy()
         return obs
 
-    def _get_viewer_image(self):
+    def _get_viewer_image(self, timeout=2.0):
+        deadline = time.time() + timeout
         while self.viewer_image_buffer is None:
-            pass
+            if time.time() >= deadline:
+                return None if self.last_viewer_frame is None else self.last_viewer_frame.copy()
+            time.sleep(0.001)
         image = self.viewer_image_buffer.copy()
-        self.viewer_image_buffer = None
+        self.last_viewer_frame = image.copy()
         return image
 
     def _on_collision(self, event):
@@ -423,9 +481,15 @@ class CarlaBaseEnv(gym.Env):
 
     def _set_observation_image(self, image):
         self.observation_buffer = image
+        self.observation_frames_received += 1
 
     def _set_viewer_image(self, image):
         self.viewer_image_buffer = image
+        self.viewer_frames_received += 1
+
+    def _debug(self, message):
+        if self.debug_enabled:
+            print(f"[CarlaBaseEnv] {message}", flush=True)
 
     def _refresh_route_visuals(self):
         return

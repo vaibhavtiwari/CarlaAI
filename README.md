@@ -138,6 +138,20 @@ Run the classical PID controller baseline on the route environment:
 python run_controller.py --config config/controller_pid.example.json
 ```
 
+Run the learning-oriented kinematic MPC baseline on the route environment:
+
+```bash
+python run_controller.py --config config/controller_mpc.example.json
+```
+
+Analyze an MPC debug trace after a run:
+
+```bash
+python analyze_mpc_run.py models/controller_runs/mpc_route_debug.json
+```
+
+With the current MPC logging flow, each episode/route is also saved as its own debug and summary JSON file, which makes route-by-route analysis easier.
+
 Inspect policy behavior:
 
 ```bash
@@ -170,6 +184,7 @@ Examples:
 - `config/eval.example.json`
 - `config/autopilot_collector.example.json`
 - `config/controller_pid.example.json`
+- `config/controller_mpc.example.json`
 - `config/lab.example.json`
 
 The CARLA Env Lab can also save and load launcher setups as JSON through its `Save Setup` and `Load Setup` buttons.

@@ -39,6 +39,7 @@ class CarlaLapEnv(CarlaBaseEnv):
         self.checkpoint_waypoint_index = 0
 
     def _reset_task(self, is_training):
+        self._debug(f"Lap reset task start (is_training={is_training})")
         self._soft_reset_vehicle()
         if is_training:
             waypoint, _ = self.route_waypoints[self.checkpoint_waypoint_index % len(self.route_waypoints)]
@@ -52,9 +53,11 @@ class CarlaLapEnv(CarlaBaseEnv):
         self.vehicle.set_transform(transform)
         self.vehicle.set_simulate_physics(False)
         self.vehicle.set_simulate_physics(True)
+        self._debug("Lap reset task: waiting for reset stabilization")
         self._wait_for_reset()
         self.start_waypoint_index = self.current_waypoint_index
         self.laps_completed = 0.0
+        self._debug("Lap reset task complete")
 
     def _after_waypoint_tracking(self, transform):
         self.current_waypoint, self.current_road_maneuver = self.route_waypoints[

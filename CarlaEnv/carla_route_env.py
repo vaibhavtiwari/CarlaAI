@@ -21,33 +21,69 @@ class CarlaRouteEnv(CarlaBaseEnv):
 
     def __init__(self, *args, **kwargs):
         self.max_distance = 3000
+        self.route_completion_distance_threshold = 2.0
+        self.route_completion_stationary_speed_mps = 0.25
+        self._route_transition_status = "not_checked"
         super().__init__(*args, **kwargs)
 
     def _get_vehicle_spawn_point(self):
         return self.world.map.get_spawn_points()[0]
 
     def _reset_task(self, is_training):
+        self._debug(f"Route reset task start (is_training={is_training})")
         self.num_routes_completed = -1
         self.routes_completed = 0.0
+        self._route_transition_status = "reset"
         self._create_new_route()
+        self._debug("Route reset task complete")
 
     def _before_step(self):
-        if self.current_waypoint_index >= len(self.route_waypoints) - 1:
+        if self._should_rollover_route():
+            self._route_transition_status = "triggered"
             self._create_new_route()
+        else:
+            self._route_transition_status = "waiting"
+
+    def _should_rollover_route(self):
+        if self.current_waypoint_index >= len(self.route_waypoints) - 1:
+            return True
+
+        final_waypoint, _ = self.route_waypoints[-1]
+        final_distance = self.vehicle.get_transform().location.distance(final_waypoint.transform.location)
+        speed_mps = self.vehicle.get_speed()
+        if (
+            final_distance <= self.route_completion_distance_threshold
+            and speed_mps <= self.route_completion_stationary_speed_mps
+        ):
+            self._route_transition_status = "threshold_reached"
+            return True
+        return False
 
     def _create_new_route(self):
+        self._debug("Route creation: soft reset vehicle")
         self._soft_reset_vehicle()
+        self._debug("Route creation: sampling start/end spawn points")
         self.start_wp, self.end_wp = [
             self.world.map.get_waypoint(spawn.location)
             for spawn in np.random.choice(self.world.map.get_spawn_points(), 2, replace=False)
         ]
+        self._debug(
+            "Route creation: computing waypoints "
+            f"from ({self.start_wp.transform.location.x:.1f}, {self.start_wp.transform.location.y:.1f}) "
+            f"to ({self.end_wp.transform.location.x:.1f}, {self.end_wp.transform.location.y:.1f})"
+        )
         self.route_waypoints = compute_route_waypoints(self.world.map, self.start_wp, self.end_wp, resolution=1.0)
+        self._debug(f"Route creation: computed {len(self.route_waypoints)} waypoints")
         self.current_waypoint_index = 0
         self.num_routes_completed += 1
+        self._route_transition_status = "new_route_loaded"
+        self._debug("Route creation: teleporting vehicle to route start")
         self.vehicle.set_transform(self.start_wp.transform)
         self.vehicle.set_simulate_physics(False)
         self.vehicle.set_simulate_physics(True)
+        self._debug("Route creation: waiting for reset stabilization")
         self._wait_for_reset()
+        self._debug("Route creation: refresh route visuals")
         self._refresh_route_visuals()
 
     def _after_waypoint_tracking(self, transform):
@@ -71,8 +107,12 @@ class CarlaRouteEnv(CarlaBaseEnv):
         return "Route"
 
     def _get_render_metrics(self):
+        route_count = len(getattr(self, "route_waypoints", []))
         return [
             "Routes completed:    % 7.2f" % self.routes_completed,
+            "Route progress:    % 4d/%-4d" % (self.current_waypoint_index, route_count),
+            "Route rollover: % 12s" % self._route_transition_status,
+            "Route end tol:   % 7.2f m" % self.route_completion_distance_threshold,
             "Distance traveled: % 7d m" % self.distance_traveled,
             "Center deviance:   % 7.2f m" % self.distance_from_center,
             "Avg center dev:    % 7.2f m" % (self.center_lane_deviation / self.step_count),

@@ -1,0 +1,16 @@
+{
+  "controller": "mpc",
+  "host": "127.0.0.1",
+  "port": 2000,
+  "viewer_res": "1280x720",
+  "obs_res": "160x80",
+  "show_waypoints": 1,
+  "synchronous": 1,
+  "fps": 30,
+  "target_speed": 20.0,
+  "episodes": 1,
+  "mpc_horizon": 8,
+  "mpc_dt": 0.2,
+  "summary_path": "models/controller_runs/mpc_route_summary.json",
+  "debug_trace_path": "models/controller_runs/mpc_route_debug.json"
+}

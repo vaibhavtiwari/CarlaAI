@@ -1,7 +1,7 @@
 import argparse
 
-from CarlaEnv.config import namespace_to_env_config, parse_args_with_config
-from CarlaEnv.controller_runner import run_pid_controller
+from CarlaEnv.config import ControllerConfig, namespace_to_controller_config, namespace_to_env_config, parse_args_with_config
+from CarlaEnv.controller_runner import run_mpc_controller, run_pid_controller
 
 USE_ROUTE_ENVIRONMENT = True
 
@@ -12,8 +12,9 @@ else:
 
 
 def main():
+    controller_defaults = ControllerConfig()
     parser = argparse.ArgumentParser(description="Run a classical controller baseline in CARLA")
-    parser.add_argument("--controller", type=str, default="pid", choices=["pid"], help="Controller baseline to run")
+    parser.add_argument("--controller", type=str, default="pid", choices=["pid", "mpc"], help="Controller baseline to run")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="CARLA host")
     parser.add_argument("--port", type=int, default=2000, help="CARLA port")
     parser.add_argument("--viewer_res", type=str, default="1280x720", help="Viewer resolution")
@@ -22,12 +23,16 @@ def main():
     parser.add_argument("--synchronous", type=int, default=1, help="Synchronous mode (0/1)")
     parser.add_argument("--fps", type=int, default=30, help="Simulation FPS")
     parser.add_argument("-start_carla", action="store_true", help="Automatically start CARLA")
-    parser.add_argument("--target_speed", type=float, default=20.0, help="Controller target speed in km/h")
-    parser.add_argument("--episodes", type=int, default=1, help="Number of episodes to run")
+    parser.add_argument("--target_speed", type=float, default=controller_defaults.target_speed, help="Controller target speed in km/h")
+    parser.add_argument("--episodes", type=int, default=controller_defaults.episodes, help="Number of episodes to run")
     parser.add_argument("--summary_path", type=str, default=None, help="Optional JSON path to write episode summaries")
+    parser.add_argument("--debug_trace_path", type=str, default=None, help="Optional JSON path to write per-step MPC debug traces")
+    parser.add_argument("--mpc_horizon", type=int, default=controller_defaults.mpc_horizon, help="MPC prediction horizon")
+    parser.add_argument("--mpc_dt", type=float, default=controller_defaults.mpc_dt, help="MPC discretization step in seconds")
 
     args = parse_args_with_config(parser)
     simulator_config, display_config = namespace_to_env_config(args)
+    controller_config = namespace_to_controller_config(args)
 
     env = CarlaEnv(
         host=simulator_config.host,
@@ -41,13 +46,25 @@ def main():
     )
 
     try:
-        summaries = run_pid_controller(
-            env,
-            target_speed=args.target_speed,
-            max_episodes=args.episodes,
-            render=True,
-            summary_path=args.summary_path,
-        )
+        if args.controller == "pid":
+            summaries = run_pid_controller(
+                env,
+                target_speed=controller_config.target_speed,
+                max_episodes=controller_config.episodes,
+                render=True,
+                summary_path=args.summary_path,
+            )
+        else:
+            summaries = run_mpc_controller(
+                env,
+                target_speed=controller_config.target_speed,
+                max_episodes=controller_config.episodes,
+                render=True,
+                summary_path=args.summary_path,
+                debug_trace_path=args.debug_trace_path,
+                horizon=controller_config.mpc_horizon,
+                dt=controller_config.mpc_dt,
+            )
         for summary in summaries:
             print(summary)
     finally:

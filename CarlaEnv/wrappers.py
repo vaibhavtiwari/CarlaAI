@@ -126,7 +126,10 @@ def draw_route_overlay(
 
     def project(location):
         px = offset_x + (location.x - min_x) * scale
-        py = inner_rect.bottom - 24 - (offset_y - inner_rect.top + (location.y - min_y) * scale)
+        # CARLA uses a left-handed world frame (x forward, y right). Mapping y
+        # directly into screen y preserves turn handedness in the 2D overlay,
+        # so left turns still look like left turns on the panel.
+        py = offset_y + (location.y - min_y) * scale
         return int(round(px)), int(round(py))
 
     if road_segments:

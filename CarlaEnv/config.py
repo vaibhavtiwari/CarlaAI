@@ -29,6 +29,14 @@ class CollectorConfig:
     min_route_distance: float = 100.0
 
 
+@dataclass
+class ControllerConfig:
+    target_speed: float = 80.0
+    episodes: int = 1
+    mpc_horizon: int = 20
+    mpc_dt: float = 0.2
+
+
 def parse_resolution(value):
     if isinstance(value, (tuple, list)) and len(value) == 2:
         return int(value[0]), int(value[1])
@@ -71,6 +79,15 @@ def namespace_to_env_config(args):
         show_waypoints=bool(getattr(args, "show_waypoints", True)),
     )
     return simulator, display
+
+
+def namespace_to_controller_config(args):
+    return ControllerConfig(
+        target_speed=float(getattr(args, "target_speed", 20.0)),
+        episodes=int(getattr(args, "episodes", 1)),
+        mpc_horizon=int(getattr(args, "mpc_horizon", 20)),
+        mpc_dt=float(getattr(args, "mpc_dt", 0.2)),
+    )
 
 
 def dataclass_dict(instance):
