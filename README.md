@@ -13,6 +13,8 @@ The repo currently brings together:
 - SegFormer-based semantic segmentation tooling
 - data collection and inspection utilities
 
+The longer-term goal is to study not only controller performance, but also how user comfort, trust, and preference-aware constraints can shape autonomous driving behavior.
+
 
 ## What the Repo Currently Provides
 
