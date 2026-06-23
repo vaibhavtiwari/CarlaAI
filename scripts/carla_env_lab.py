@@ -9,10 +9,15 @@ from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import ttk
 
+if __package__ in (None, ""):
+    import _bootstrap
+else:
+    from . import _bootstrap
+
 from CarlaEnv.config import load_json_config
 
 
-REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = _bootstrap.REPO_ROOT
 DEFAULT_LAB_CONFIG_DIR = os.path.join(REPO_ROOT, "config")
 
 
@@ -85,6 +90,7 @@ class CarlaEnvLab:
                     "Manual Sensor Collector",
                     "Autopilot Route Collector",
                     "PID Controller Baseline",
+                    "MPC Controller Baseline",
                     "Lap Env Probe",
                     "Route Env Probe",
                 ],
@@ -133,6 +139,7 @@ class CarlaEnvLab:
             "Manual Sensor Collector: shows viewer + RGB + segmentation feeds and can save images.\n"
             "Autopilot Route Collector: runs route planning and automatic control, with live sensor previews.\n"
             "PID Controller Baseline: runs the classical local-planner PID controller on the route environment.\n"
+            "MPC Controller Baseline: runs a kinematic bicycle MPC route tracker on the route environment.\n"
             "Lap/Route Probe: creates the env, prints action/observation/state shapes, resets once, and steps once."
         )
         ttk.Label(help_box, text=help_text, justify=tk.LEFT).pack(anchor="w")
@@ -143,6 +150,7 @@ class CarlaEnvLab:
         self.run_button.pack(side=tk.LEFT)
         ttk.Button(controls, text="Load Setup", command=self._load_setup).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(controls, text="Save Setup", command=self._save_setup).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(controls, text="Analyze MPC Trace", command=self._analyze_mpc_trace).pack(side=tk.LEFT, padx=(8, 0))
         self.stop_button = ttk.Button(controls, text="Stop Running Test", command=self._stop_process, state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT, padx=(8, 0))
         self.force_stop_button = ttk.Button(
@@ -254,7 +262,35 @@ class CarlaEnvLab:
         if selected == "PID Controller Baseline":
             cmd = [
                 python,
-                "run_controller.py",
+                "-m",
+                "scripts.run_controller",
+                "--host",
+                self.host_var.get().strip(),
+                "--port",
+                self.port_var.get().strip(),
+                "--viewer_res",
+                self.viewer_res_var.get().strip(),
+                "--obs_res",
+                self.obs_res_var.get().strip(),
+                "--fps",
+                self.fps_var.get().strip(),
+                "--synchronous",
+                "1" if self.sync_var.get() else "0",
+                "--show_waypoints",
+                "1" if self.show_waypoints_var.get() else "0",
+                "--target_speed",
+                self.target_speed_var.get().strip(),
+            ]
+            if self.start_carla_var.get():
+                cmd.append("-start_carla")
+            return cmd
+        if selected == "MPC Controller Baseline":
+            cmd = [
+                python,
+                "-m",
+                "scripts.run_controller",
+                "--controller",
+                "mpc",
                 "--host",
                 self.host_var.get().strip(),
                 "--port",
@@ -496,6 +532,59 @@ env.close()
         threading.Thread(target=self._stream_output, daemon=True).start()
         threading.Thread(target=self._wait_for_exit, daemon=True).start()
 
+    def _analyze_mpc_trace(self):
+        if self.process is not None:
+            self._append_log("A process is already running. Stop it before launching analysis.\n")
+            return
+
+        default_trace = os.path.join(REPO_ROOT, "models", "controller_runs", "mpc_route_debug.json")
+        initial_dir = os.path.dirname(default_trace) if os.path.isdir(os.path.dirname(default_trace)) else REPO_ROOT
+        trace_path = filedialog.askopenfilename(
+            parent=self.root,
+            title="Select MPC Debug Trace",
+            initialdir=initial_dir,
+            initialfile=os.path.basename(default_trace),
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if not trace_path:
+            return
+
+        output_dir = filedialog.askdirectory(
+            parent=self.root,
+            title="Select Output Directory For MPC Plots",
+            initialdir=os.path.splitext(trace_path)[0] + "_plots",
+            mustexist=False,
+        )
+        if not output_dir:
+            return
+
+        command = [
+            sys.executable,
+            "-m",
+            "scripts.analyze_mpc_run",
+            trace_path,
+            "--output_dir",
+            output_dir,
+        ]
+        self._append_log(f"\n[ANALYZE MPC] {' '.join(command)}\n")
+        self.process = subprocess.Popen(
+            command,
+            cwd=REPO_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            preexec_fn=os.setsid if os.name != "nt" else None,
+        )
+        self.run_button.configure(state=tk.DISABLED)
+        self.stop_button.configure(state=tk.NORMAL)
+        self.force_stop_button.configure(state=tk.DISABLED)
+        self.status_var.set("Analyzing MPC Trace")
+        self.stopping = False
+
+        threading.Thread(target=self._stream_output, daemon=True).start()
+        threading.Thread(target=self._wait_for_exit, daemon=True).start()
+
     def _refresh_vehicles(self):
         code = (
             self._carla_python_snippet_prefix()
@@ -692,5 +781,9 @@ control_existing_vehicle(
         self.root.mainloop()
 
 
-if __name__ == "__main__":
+def main():
     CarlaEnvLab().run()
+
+
+if __name__ == "__main__":
+    main()

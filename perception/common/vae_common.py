@@ -1,7 +1,7 @@
 import numpy as np
 import re
 from CarlaEnv.wrappers import vector
-from vae.models import ConvVAE, MlpVAE
+from perception.vae.models import ConvVAE, MlpVAE
 
 def load_vae(model_dir, z_dim=None, model_type=None):
     """

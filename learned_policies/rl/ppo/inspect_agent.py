@@ -3,39 +3,21 @@ from tkinter.ttk import *
 from tkinter.filedialog import askopenfilename
 
 import os
-import gym
 import numpy as np
 import argparse
 from PIL import Image, ImageTk
 
-from ppo import PPO
-from vae.models import MlpVAE, ConvVAE
-from vae_common import preprocess_frame, load_vae
+try:
+    import gym
+except ImportError:
+    import gymnasium as gym
 
-parser = argparse.ArgumentParser(description="Visualizes the policy learned by the agent")
+from learned_policies.rl.ppo import PPO
+from perception.vae.models import MlpVAE, ConvVAE
+from perception.common.vae_common import preprocess_frame, load_vae
 
-# VAE parameters
-parser.add_argument("--model_name", type=str, required=True)
-parser.add_argument("--vae_model", type=str, default="vae/models/seg_bce_cnn_zdim64_beta1_kl_tolerance0.0_data/")
-parser.add_argument("--vae_model_type", type=str, default=None)
-parser.add_argument("--vae_z_dim", type=int, default=None)
-
-args = parser.parse_args()
-
-# Load VAE
-vae = load_vae(args.vae_model, args.vae_z_dim, args.vae_model_type)
-
-# State encoding fn
-measurements_to_include = set(["steer", "throttle", "speed"])
-#encode_state_fn = create_encode_state_fn(vae, measurements_to_include)
-
-# Load PPO agent
-input_shape = np.array([vae.z_dim + len(measurements_to_include)])
-action_space = gym.spaces.Box(np.array([-1, 0]), np.array([1, 1]), dtype=np.float32) # steer, throttle
-model = PPO(input_shape, action_space, model_dir=os.path.join("models", args.model_name))
-model.init_session(init_logging=False)
-if not model.load_latest_checkpoint():
-    raise Exception("Failed to load PPO agent")
+vae = None
+model = None
 
 class UI():
     def __init__(self, z_dim, generate_fn, slider_range=3, image_scale=4):
@@ -177,5 +159,35 @@ def generate(z, encoded_state):
     for i in range(len(action)):
         ui.action_vars[i].set(action[i])
 
-ui = UI(vae.sample.shape[1], generate, slider_range=10)
-ui.mainloop()
+
+def main():
+    global vae
+    global model
+    global ui
+
+    parser = argparse.ArgumentParser(description="Visualizes the policy learned by the agent")
+
+    # VAE parameters
+    parser.add_argument("--model_name", type=str, required=True)
+    parser.add_argument("--vae_model", type=str, default="perception/vae/models/seg_bce_cnn_zdim64_beta1_kl_tolerance0.0_data/")
+    parser.add_argument("--vae_model_type", type=str, default=None)
+    parser.add_argument("--vae_z_dim", type=int, default=None)
+
+    args = parser.parse_args()
+
+    vae = load_vae(args.vae_model, args.vae_z_dim, args.vae_model_type)
+
+    measurements_to_include = set(["steer", "throttle", "speed"])
+    input_shape = np.array([vae.z_dim + len(measurements_to_include)])
+    action_space = gym.spaces.Box(np.array([-1, 0]), np.array([1, 1]), dtype=np.float32)
+    model = PPO(input_shape, action_space, model_dir=os.path.join("models", args.model_name))
+    model.init_session(init_logging=False)
+    if not model.load_latest_checkpoint():
+        raise Exception("Failed to load PPO agent")
+
+    ui = UI(vae.sample.shape[1], generate, slider_range=10)
+    ui.mainloop()
+
+
+if __name__ == "__main__":
+    main()

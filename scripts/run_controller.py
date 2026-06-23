@@ -1,14 +1,11 @@
 import argparse
 
-from CarlaEnv.config import ControllerConfig, namespace_to_controller_config, namespace_to_env_config, parse_args_with_config
-from CarlaEnv.controller_runner import run_mpc_controller, run_pid_controller
-
-USE_ROUTE_ENVIRONMENT = True
-
-if USE_ROUTE_ENVIRONMENT:
-    from CarlaEnv.carla_route_env import CarlaRouteEnv as CarlaEnv
+if __package__ in (None, ""):
+    import _bootstrap
 else:
-    from CarlaEnv.carla_lap_env import CarlaLapEnv as CarlaEnv
+    from . import _bootstrap
+
+from CarlaEnv.config import ControllerConfig, namespace_to_controller_config, namespace_to_env_config, parse_args_with_config
 
 
 def main():
@@ -33,6 +30,14 @@ def main():
     args = parse_args_with_config(parser)
     simulator_config, display_config = namespace_to_env_config(args)
     controller_config = namespace_to_controller_config(args)
+
+    from CarlaEnv.controller_runner import run_mpc_controller, run_pid_controller
+
+    use_route_environment = True
+    if use_route_environment:
+        from CarlaEnv.carla_route_env import CarlaRouteEnv as CarlaEnv
+    else:
+        from CarlaEnv.carla_lap_env import CarlaLapEnv as CarlaEnv
 
     env = CarlaEnv(
         host=simulator_config.host,

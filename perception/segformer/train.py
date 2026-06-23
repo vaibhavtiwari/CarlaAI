@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 def parse_args() -> SegFormerConfig:
     parser = argparse.ArgumentParser(description="Train SegFormer on CARLA semantic segmentation data.")
-    parser.add_argument("--dataset_dir", type=str, default="vae/my_data_autopilot")
+    parser.add_argument("--dataset_dir", type=str, default="perception/vae/my_data_autopilot")
     parser.add_argument("--output_dir", type=str, default="models/segformer")
     parser.add_argument("--log_dir", type=str, default="models/segformer/logs")
     parser.add_argument("--pretrained_model_name", type=str, default="nvidia/segformer-b2-finetuned-ade-512-512")

@@ -64,7 +64,7 @@ CARLA_COLOR_TO_CLASS_ID = {
 
 @dataclass
 class SegFormerConfig:
-    dataset_dir: str = "vae/my_data_autopilot"
+    dataset_dir: str = "perception/vae/my_data_autopilot"
     output_dir: str = "models/segformer"
     log_dir: str = "models/segformer/logs"
     pretrained_model_name: str = "nvidia/segformer-b2-finetuned-ade-512-512"

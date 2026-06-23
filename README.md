@@ -33,19 +33,19 @@ The longer-term goal is to study not only controller performance, but also how u
 PID baseline:
 
 ```bash
-python run_controller.py --config config/controller_pid.example.json
+python3 -m scripts.run_controller --config config/controller_pid.example.json
 ```
 
 Kinematic MPC baseline:
 
 ```bash
-python run_controller.py --config config/controller_mpc.example.json
+python3 -m scripts.run_controller --config config/controller_mpc.example.json
 ```
 
 Analyze an MPC debug trace:
 
 ```bash
-python analyze_mpc_run.py models/controller_runs/mpc_route_debug.json
+python3 -m scripts.analyze_mpc_run models/controller_runs/mpc_route_debug.json
 ```
 
 ### Train and Evaluate PPO
@@ -53,61 +53,61 @@ python analyze_mpc_run.py models/controller_runs/mpc_route_debug.json
 Train:
 
 ```bash
-python train.py --config config/train.example.json
+python3 -m scripts.ppo_train --config config/train.example.json
 ```
 
 Evaluate:
 
 ```bash
-python run_eval.py --config config/eval.example.json
+python3 -m scripts.ppo_eval --config config/eval.example.json
 ```
 
 Inspect a trained policy:
 
 ```bash
-python inspect_agent.py --model_name name_of_your_model
+python3 -m scripts.ppo_inspect --model_name name_of_your_model
 ```
 
 ### Collect Data
 
 ```bash
-python CarlaEnv/collect_data.py --output_dir vae/my_data -start_carla
+python CarlaEnv/collect_data.py --output_dir perception/vae/my_data -start_carla
 ```
 
 ### Train a VAE
 
 ```bash
-cd vae
+cd perception/vae
 python train_vae.py --model_name my_trained_vae --dataset my_data
 ```
 
 Inspect reconstructions:
 
 ```bash
-cd vae
+cd perception/vae
 python inspect_vae.py --model_dir models/my_trained_vae
 ```
 
 ### Train SegFormer
 
 ```bash
-python3 -m SegFormer.train --dataset_dir vae/my_data_autopilot --num_workers 8
+python3 -m perception.segformer.train --dataset_dir perception/vae/my_data_autopilot --num_workers 8
 ```
 
 Inspect predictions:
 
 ```bash
-python3 -m SegFormer.inspect_segformer \
+python3 -m perception.segformer.inspect_segformer \
   --checkpoint models/segformer/best_model.pt \
-  --dataset_dir vae/my_data_autopilot
+  --dataset_dir perception/vae/my_data_autopilot
 ```
 
 Evaluate:
 
 ```bash
-python3 -m SegFormer.evaluation \
+python3 -m perception.segformer.evaluation \
   --checkpoint models/segformer/best_model.pt \
-  --dataset_dir vae/my_data_autopilot
+  --dataset_dir perception/vae/my_data_autopilot
 ```
 
 ## Repo Structure
@@ -115,17 +115,25 @@ python3 -m SegFormer.evaluation \
 ```text
 CarlaAI/
 ├── CarlaEnv/          # CARLA environments, planners, HUD, wrappers, controllers
-├── CarlaEnv/mpc/      # modular kinematic MPC implementation
-├── SegFormer/         # semantic segmentation workflow
-├── vae/               # VAE workflow
+├── control/           # classical control modules
+│   ├── mpc/           # modular kinematic MPC implementation
+│   └── pid/           # baseline-facing PID runner/planner adapter
+├── perception/        # perception models, datasets, and shared helpers
+│   ├── segformer/     # semantic segmentation workflow
+│   ├── vae/           # VAE workflow
+│   └── common/        # shared perception helpers
+├── learned_policies/  # learned driving policies
+│   └── rl/ppo/        # PPO policy, training, eval, and helpers
 ├── config/            # example JSON configs
-├── doc/               # notes, write-up, figures
+├── docs/              # notes, write-up, figures
 ├── models/            # checkpoints and logs
-├── train.py           # PPO training
-├── run_eval.py        # PPO evaluation
-├── run_controller.py  # PID/MPC controller runs
-├── inspect_agent.py   # PPO behavior inspection
-└── analyze_mpc_run.py # MPC debug-trace analysis
+├── scripts/           # runnable entry points
+│   ├── ppo_train.py
+│   ├── ppo_eval.py
+│   ├── run_controller.py
+│   ├── ppo_inspect.py
+│   ├── analyze_mpc_run.py
+│   └── carla_env_lab.py
 ```
 
 ## Config / Examples

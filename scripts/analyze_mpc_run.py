@@ -3,6 +3,11 @@ import json
 import os
 from glob import glob
 
+if __package__ in (None, ""):
+    import _bootstrap
+else:
+    from . import _bootstrap
+
 import matplotlib.pyplot as plt
 import numpy as np
 

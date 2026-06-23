@@ -4,7 +4,7 @@ try:
     import casadi as ca
 except ImportError as exc:
     raise ImportError(
-        "CasADi is required for CarlaEnv.mpc. Use the Python environment where `import casadi` works."
+        "CasADi is required for control.mpc. Use the Python environment where `import casadi` works."
     ) from exc
 
 

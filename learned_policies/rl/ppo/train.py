@@ -3,14 +3,14 @@ import random
 import shutil
 
 import numpy as np
-import tensorflow as tf
+import torch
 
-from vae_common import create_encode_state_fn, load_vae
-from ppo import PPO
-from reward_functions import reward_functions
-from run_eval import run_eval
-from utils import compute_gae
-from vae.models import ConvVAE, MlpVAE
+from CarlaEnv.config import namespace_to_env_config, parse_args_with_config
+from learned_policies.rl.ppo import PPO
+from perception.common.segformer_common import create_encode_state_fn, load_segformer
+from .reward_functions import reward_functions
+from .run_eval import run_eval
+from .utils import compute_gae
 
 USE_ROUTE_ENVIRONMENT = False
 
@@ -34,9 +34,12 @@ def train(params, start_carla=True, restart=False):
     num_epochs       = params["num_epochs"]
     num_episodes     = params["num_episodes"]
     batch_size       = params["batch_size"]
-    vae_model        = params["vae_model"]
-    vae_model_type   = params["vae_model_type"]
-    vae_z_dim        = params["vae_z_dim"]
+    segformer_checkpoint = params["segformer_checkpoint"]
+    segformer_backbone   = params["segformer_backbone"]
+    segformer_width      = params["segformer_width"]
+    segformer_height     = params["segformer_height"]
+    segformer_num_classes = params["segformer_num_classes"]
+    device           = params["device"]
     synchronous      = params["synchronous"]
     fps              = params["fps"]
     action_smoothing = params["action_smoothing"]
@@ -48,16 +51,20 @@ def train(params, start_carla=True, restart=False):
 
     # Set seeds
     if isinstance(seed, int):
-        tf.random.set_random_seed(seed)
         np.random.seed(seed)
-        random.seed(0)
+        random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
 
-    # Load VAE
-    vae = load_vae(vae_model, vae_z_dim, vae_model_type)
-    
-    # Override params for logging
-    params["vae_z_dim"] = vae.z_dim
-    params["vae_model_type"] = "mlp" if isinstance(vae, MlpVAE) else "cnn"
+    # Load SegFormer encoder
+    segformer = load_segformer(
+        checkpoint_path=segformer_checkpoint,
+        pretrained_model_name=segformer_backbone,
+        image_size=(segformer_width, segformer_height),
+        num_classes=segformer_num_classes,
+        device=device,
+    )
 
     print("")
     print("Training parameters:")
@@ -66,11 +73,15 @@ def train(params, start_carla=True, restart=False):
 
     # Create state encoding fn
     measurements_to_include = set(["steer", "throttle", "speed"])
-    encode_state_fn = create_encode_state_fn(vae, measurements_to_include)
+    encode_state_fn = create_encode_state_fn(segformer, measurements_to_include)
 
     # Create env
     print("Creating environment")
-    env = CarlaEnv(obs_res=(160, 80),
+    env = CarlaEnv(host=params.get("host", "127.0.0.1"),
+                   port=params.get("port", 2000),
+                   viewer_res=params.get("viewer_res", (1280, 720)),
+                   obs_res=params.get("obs_res", (160, 80)),
+                   show_waypoints=params.get("show_waypoints", True),
                    action_smoothing=action_smoothing,
                    encode_state_fn=encode_state_fn,
                    reward_fn=reward_functions[reward_fn],
@@ -82,7 +93,7 @@ def train(params, start_carla=True, restart=False):
     best_eval_reward = -float("inf")
 
     # Environment constants
-    input_shape = np.array([vae.z_dim + len(measurements_to_include)])
+    input_shape = np.array([segformer.feature_dim + len(measurements_to_include)])
     num_actions = env.action_space.shape[0]
 
     # Create model
@@ -91,7 +102,8 @@ def train(params, start_carla=True, restart=False):
                 learning_rate=learning_rate, lr_decay=lr_decay,
                 epsilon=ppo_epsilon, initial_std=initial_std,
                 value_scale=value_scale, entropy_scale=entropy_scale,
-                model_dir=os.path.join("models", model_name))
+                model_dir=os.path.join("models", model_name),
+                device=device)
 
     # Prompt to load existing model if any
     if not restart:
@@ -119,14 +131,19 @@ def train(params, start_carla=True, restart=False):
         
         # Run evaluation periodically
         if episode_idx % eval_interval == 0:
-            video_filename = os.path.join(model.video_dir, "episode{}.avi".format(episode_idx))
+            video_filename = None
+            if record_eval:
+                video_filename = os.path.join(model.video_dir, "episode{}.avi".format(episode_idx))
             eval_reward = run_eval(env, model, video_filename=video_filename)
+            eval_summary = env.get_episode_summary()
             model.write_value_to_summary("eval/reward", eval_reward, episode_idx)
-            model.write_value_to_summary("eval/distance_traveled", env.distance_traveled, episode_idx)
-            model.write_value_to_summary("eval/average_speed", 3.6 * env.speed_accum / env.step_count, episode_idx)
-            model.write_value_to_summary("eval/center_lane_deviation", env.center_lane_deviation, episode_idx)
-            model.write_value_to_summary("eval/average_center_lane_deviation", env.center_lane_deviation / env.step_count, episode_idx)
-            model.write_value_to_summary("eval/distance_over_deviation", env.distance_traveled / env.center_lane_deviation, episode_idx)
+            model.write_value_to_summary("eval/distance_traveled", eval_summary["distance_traveled"], episode_idx)
+            model.write_value_to_summary("eval/average_speed", eval_summary["average_speed_kmh"], episode_idx)
+            model.write_value_to_summary("eval/center_lane_deviation", eval_summary["center_lane_deviation"], episode_idx)
+            model.write_value_to_summary("eval/average_center_lane_deviation", eval_summary["average_center_lane_deviation"], episode_idx)
+            model.write_value_to_summary("eval/distance_over_deviation", eval_summary["distance_over_deviation"], episode_idx)
+            model.write_value_to_summary("eval/collisions", eval_summary["collisions"], episode_idx)
+            model.write_value_to_summary("eval/lane_invasions", eval_summary["lane_invasions"], episode_idx)
             if eval_reward > best_eval_reward:
                 model.save()
                 best_eval_reward = eval_reward
@@ -207,15 +224,18 @@ def train(params, start_carla=True, restart=False):
                                 returns[mb_idx], advantages[mb_idx])
 
         # Write episodic values
+        train_summary = env.get_episode_summary()
         model.write_value_to_summary("train/reward", total_reward, episode_idx)
-        model.write_value_to_summary("train/distance_traveled", env.distance_traveled, episode_idx)
-        model.write_value_to_summary("train/average_speed", 3.6 * env.speed_accum / env.step_count, episode_idx)
-        model.write_value_to_summary("train/center_lane_deviation", env.center_lane_deviation, episode_idx)
-        model.write_value_to_summary("train/average_center_lane_deviation", env.center_lane_deviation / env.step_count, episode_idx)
-        model.write_value_to_summary("train/distance_over_deviation", env.distance_traveled / env.center_lane_deviation, episode_idx)
+        model.write_value_to_summary("train/distance_traveled", train_summary["distance_traveled"], episode_idx)
+        model.write_value_to_summary("train/average_speed", train_summary["average_speed_kmh"], episode_idx)
+        model.write_value_to_summary("train/center_lane_deviation", train_summary["center_lane_deviation"], episode_idx)
+        model.write_value_to_summary("train/average_center_lane_deviation", train_summary["average_center_lane_deviation"], episode_idx)
+        model.write_value_to_summary("train/distance_over_deviation", train_summary["distance_over_deviation"], episode_idx)
+        model.write_value_to_summary("train/collisions", train_summary["collisions"], episode_idx)
+        model.write_value_to_summary("train/lane_invasions", train_summary["lane_invasions"], episode_idx)
         model.write_episodic_summaries()
 
-if __name__ == "__main__":
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Trains a CARLA agent with PPO")
@@ -234,14 +254,23 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32, help="Epoch batch size")
     parser.add_argument("--num_episodes", type=int, default=0, help="Number of episodes to train for (0 or less trains forever)")
 
-    # VAE parameters
-    parser.add_argument("--vae_model", type=str,
-                        default="vae/models/seg_bce_cnn_zdim64_beta1_kl_tolerance0.0_data/",
-                        help="Trained VAE model to load")
-    parser.add_argument("--vae_model_type", type=str, default=None, help="VAE model type (\"cnn\" or \"mlp\")")
-    parser.add_argument("--vae_z_dim", type=int, default=None, help="Size of VAE bottleneck")
+    # SegFormer parameters
+    parser.add_argument("--segformer_checkpoint", type=str, default="models/segformer/best_model.pt",
+                        help="Path to a trained SegFormer checkpoint")
+    parser.add_argument("--segformer_backbone", type=str,
+                        default="nvidia/segformer-b2-finetuned-ade-512-512",
+                        help="Pretrained Hugging Face SegFormer backbone name")
+    parser.add_argument("--segformer_width", type=int, default=512, help="SegFormer preprocessing width")
+    parser.add_argument("--segformer_height", type=int, default=512, help="SegFormer preprocessing height")
+    parser.add_argument("--segformer_num_classes", type=int, default=13, help="Number of segmentation classes")
+    parser.add_argument("--device", type=str, default="cuda", help="Torch device for PPO and SegFormer")
 
     # Environment settings
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="CARLA host")
+    parser.add_argument("--port", type=int, default=2000, help="CARLA port")
+    parser.add_argument("--viewer_res", type=str, default="1280x720", help="Viewer resolution")
+    parser.add_argument("--obs_res", type=str, default="160x80", help="Observation resolution")
+    parser.add_argument("--show_waypoints", type=int, default=1, help="Render waypoint overlay")
     parser.add_argument("--synchronous", type=int, default=True, help="Set this to True when running in a synchronous environment")
     parser.add_argument("--fps", type=int, default=30, help="Set this to the FPS of the environment")
     parser.add_argument("--action_smoothing", type=float, default=0.0, help="Action smoothing factor")
@@ -251,7 +280,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_name", type=str, required=True, help="Name of the model to train. Output written to models/model_name")
     parser.add_argument("--reward_fn", type=str,
                         default="reward_speed_centering_angle_multiply",
-                        help="Reward function to use. See reward_functions.py for more info.")
+                        help="Reward function to use. See learned_policies/rl/ppo/reward_functions.py for more info.")
     parser.add_argument("--seed", type=int, default=0,
                         help="Seed to use. (Note that determinism unfortunately appears to not be garuanteed " +
                              "with this option in our experience)")
@@ -263,14 +292,25 @@ if __name__ == "__main__":
     parser.add_argument("-restart", action="store_true",
                         help="If True, delete existing model in models/model_name before starting training")
 
-    params = vars(parser.parse_args())
+    args = parse_args_with_config(parser)
+    simulator_config, display_config = namespace_to_env_config(args)
+    params = vars(args)
+    params["host"] = simulator_config.host
+    params["port"] = simulator_config.port
+    params["synchronous"] = simulator_config.synchronous
+    params["fps"] = simulator_config.fps
+    params["start_carla"] = simulator_config.start_carla
+    params["viewer_res"] = display_config.viewer_res
+    params["obs_res"] = display_config.obs_res
+    params["show_waypoints"] = display_config.show_waypoints
 
     # Remove a couple of parameters that we dont want to log
     start_carla = params["start_carla"]; del params["start_carla"]
     restart = params["restart"]; del params["restart"]
 
-    # Reset tf graph
-    tf.reset_default_graph()
-
     # Start training
     train(params, start_carla, restart)
+
+
+if __name__ == "__main__":
+    main()

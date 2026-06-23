@@ -15,7 +15,7 @@ from .utils import resolve_device
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate a trained SegFormer checkpoint.")
     parser.add_argument("--checkpoint", type=str, required=True)
-    parser.add_argument("--dataset_dir", type=str, default="vae/my_data_autopilot")
+    parser.add_argument("--dataset_dir", type=str, default="perception/vae/my_data_autopilot")
     parser.add_argument("--pretrained_model_name", type=str, default="nvidia/segformer-b2-finetuned-ade-512-512")
     parser.add_argument("--image_width", type=int, default=512)
     parser.add_argument("--image_height", type=int, default=512)

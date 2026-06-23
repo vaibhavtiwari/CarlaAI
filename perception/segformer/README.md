@@ -63,8 +63,8 @@ tensorboard --logdir models/segformer/logs
 ## Example commands
 
 ```bash
-python -m SegFormer.train --dataset_dir vae/my_data_autopilot
-python -m SegFormer.evaluation --checkpoint models/segformer/best_model.pt
-python -m SegFormer.inference --checkpoint models/segformer/best_model.pt --image images/rgb/example.png
-python -m SegFormer.inspect_segformer --checkpoint models/segformer/best_model.pt --dataset_dir vae/my_data_autopilot
+python -m perception.segformer.train --dataset_dir perception/vae/my_data_autopilot
+python -m perception.segformer.evaluation --checkpoint models/segformer/best_model.pt
+python -m perception.segformer.inference --checkpoint models/segformer/best_model.pt --image images/rgb/example.png
+python -m perception.segformer.inspect_segformer --checkpoint models/segformer/best_model.pt --dataset_dir perception/vae/my_data_autopilot
 ```

@@ -25,6 +25,7 @@ def create_reward_fn(reward_fn, max_speed=-1):
         global low_speed_timer
         low_speed_timer += 1.0 / env.fps
         speed = env.vehicle.get_speed()
+        speed_kmh = 3.6 * speed
         if low_speed_timer > 5.0 and speed < 1.0 / 3.6:
             env.terminal_state = True
             terminal_reason = "Vehicle stopped"
@@ -46,6 +47,7 @@ def create_reward_fn(reward_fn, max_speed=-1):
         else:
             low_speed_timer = 0.0
             reward -= 10
+            env.terminal_reason = terminal_reason
 
         if env.terminal_state:
             env.extra_info.extend([

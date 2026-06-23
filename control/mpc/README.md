@@ -103,13 +103,13 @@ The main repo still imports through:
 
 - `CarlaEnv/mpc_controller.py`
 
-That file is now just a compatibility wrapper around this folder.
+That file now serves as a compatibility bridge into this folder.
 
 The actual runtime use happens through:
 
 - `CarlaEnv/controller_runner.py`
-- `run_controller.py`
-- `carla_env_lab.py`
+- `scripts/run_controller.py`
+- `scripts/carla_env_lab.py`
 
 ## Recommended Learning Order
 

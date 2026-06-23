@@ -6,18 +6,22 @@ import time
 from collections import deque
 
 import cv2
-import gym
 import matplotlib.pyplot as plt
 import numpy as np
-import tensorflow as tf
+import torch
 from skimage import transform
 
-from ppo import PPO
-from vae.models import ConvVAE, MlpVAE
+try:
+    import gym
+except ImportError:
+    import gymnasium as gym
+
+from CarlaEnv.config import namespace_to_env_config, parse_args_with_config
+from learned_policies.rl.ppo import PPO
 from CarlaEnv.wrappers import angle_diff, vector
-from utils import VideoRecorder, compute_gae
-from vae_common import create_encode_state_fn, load_vae
-from reward_functions import reward_functions
+from .utils import VideoRecorder, compute_gae
+from perception.common.segformer_common import create_encode_state_fn, load_segformer
+from .reward_functions import reward_functions
 
 USE_ROUTE_ENVIRONMENT = False
 
@@ -72,7 +76,7 @@ def run_eval(env, model, video_filename=None):
 
     return total_reward
 
-if __name__ == "__main__":
+def main():
     import argparse
     parser = argparse.ArgumentParser(description="Runs the model in evaluation mode")
     
@@ -80,14 +84,23 @@ if __name__ == "__main__":
     parser.add_argument("--model_name", type=str, required=True, help="Name of the model to train. Output written to models/model_name")
     parser.add_argument("--reward_fn", type=str,
                         default="reward_speed_centering_angle_multiply",
-                        help="Reward function to use. See reward_functions.py for more info.")
-    parser.add_argument("--vae_model", type=str,
-                        default="vae/models/seg_bce_cnn_zdim64_beta1_kl_tolerance0.0_data/",
-                        help="Trained VAE model to load")
-    parser.add_argument("--vae_model_type", type=str, default=None, help="VAE model type (\"cnn\" or \"mlp\")")
-    parser.add_argument("--vae_z_dim", type=int, default=None, help="Size of VAE bottleneck")
+                        help="Reward function to use. See learned_policies/rl/ppo/reward_functions.py for more info.")
+    parser.add_argument("--segformer_checkpoint", type=str, default="models/segformer/best_model.pt",
+                        help="Path to a trained SegFormer checkpoint")
+    parser.add_argument("--segformer_backbone", type=str,
+                        default="nvidia/segformer-b2-finetuned-ade-512-512",
+                        help="Pretrained Hugging Face SegFormer backbone name")
+    parser.add_argument("--segformer_width", type=int, default=512, help="SegFormer preprocessing width")
+    parser.add_argument("--segformer_height", type=int, default=512, help="SegFormer preprocessing height")
+    parser.add_argument("--segformer_num_classes", type=int, default=13, help="Number of segmentation classes")
+    parser.add_argument("--device", type=str, default="cuda", help="Torch device for PPO and SegFormer")
 
     # Environment settings
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="CARLA host")
+    parser.add_argument("--port", type=int, default=2000, help="CARLA port")
+    parser.add_argument("--viewer_res", type=str, default="1280x720", help="Viewer resolution")
+    parser.add_argument("--obs_res", type=str, default="160x80", help="Observation resolution")
+    parser.add_argument("--show_waypoints", type=int, default=1, help="Render waypoint overlay")
     parser.add_argument("--synchronous", type=int, default=True, help="Set this to True when running in a synchronous environment")
     parser.add_argument("--fps", type=int, default=30, help="Set this to the FPS of the environment")
     parser.add_argument("--action_smoothing", type=float, default=0.0, help="Action smoothing factor")
@@ -96,39 +109,53 @@ if __name__ == "__main__":
     # Recording    
     parser.add_argument("--record_to_file", type=str, default=None, help="File to record evaluation video to (outputs in .avi format)")
 
-    args = parser.parse_args()
+    args = parse_args_with_config(parser)
+    simulator_config, display_config = namespace_to_env_config(args)
 
-    # Load VAE
-    vae = load_vae(args.vae_model, args.vae_z_dim, args.vae_model_type)
+    # Load SegFormer encoder
+    segformer = load_segformer(
+        checkpoint_path=args.segformer_checkpoint,
+        pretrained_model_name=args.segformer_backbone,
+        image_size=(args.segformer_width, args.segformer_height),
+        num_classes=args.segformer_num_classes,
+        device=args.device,
+    )
 
     # Create state encoding fn
     measurements_to_include = set(["steer", "throttle", "speed"])
-    encode_state_fn = create_encode_state_fn(vae, measurements_to_include)
+    encode_state_fn = create_encode_state_fn(segformer, measurements_to_include)
 
     # Create env
     print("Creating environment...")
-    env = CarlaEnv(obs_res=(160, 80),
+    env = CarlaEnv(host=simulator_config.host,
+                   port=simulator_config.port,
+                   viewer_res=display_config.viewer_res,
+                   obs_res=display_config.obs_res,
+                   show_waypoints=display_config.show_waypoints,
                    action_smoothing=args.action_smoothing,
                    encode_state_fn=encode_state_fn,
                    reward_fn=reward_functions[args.reward_fn],
-                   synchronous=args.synchronous,
-                   fps=args.fps,
-                   start_carla=args.start_carla)
+                   synchronous=simulator_config.synchronous,
+                   fps=simulator_config.fps,
+                   start_carla=simulator_config.start_carla)
 
 
     # Set seeds
     seed = 0
     if isinstance(seed, int):
-        tf.random.set_random_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
         env.seed(seed)
 
     # Create model
     print("Creating model...")
-    input_shape = np.array([vae.z_dim + len(measurements_to_include)])
+    input_shape = np.array([segformer.feature_dim + len(measurements_to_include)])
     model = PPO(input_shape, env.action_space,
-                model_dir=os.path.join("models", args.model_name))
+                model_dir=os.path.join("models", args.model_name),
+                device=args.device)
     model.init_session(init_logging=False)
     model.load_latest_checkpoint()
 
@@ -139,3 +166,7 @@ if __name__ == "__main__":
     # Close env
     print("Done!")
     env.close()
+
+
+if __name__ == "__main__":
+    main()
