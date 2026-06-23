@@ -8,7 +8,7 @@ The repo currently brings together:
 
 - CARLA route/lap environments with visualization and debugging support
 - classical controller baselines such as PID and kinematic MPC
-- PPO training and evaluation code
+- PPO policy, training, evaluation, and inspection code
 - VAE-based representation learning
 - SegFormer-based semantic segmentation tooling
 - data collection and inspection utilities
@@ -20,7 +20,7 @@ The longer-term goal is to study not only controller performance, but also how u
 
 - Gym-like CARLA environments for route-following and lap-following tasks
 - PID and modular kinematic MPC controller baselines
-- PPO training and evaluation entry points
+- PPO training, evaluation, and policy-inspection entry points
 - VAE training and reconstruction inspection tools
 - SegFormer training, evaluation, inference, and inspection tools
 - Route/HUD/debug overlays and controller trace logging
@@ -71,21 +71,19 @@ python3 -m scripts.ppo_inspect --model_name name_of_your_model
 ### Collect Data
 
 ```bash
-python CarlaEnv/collect_data.py --output_dir perception/vae/my_data -start_carla
+python3 CarlaEnv/collect_data.py --output_dir perception/vae/my_data -start_carla
 ```
 
 ### Train a VAE
 
 ```bash
-cd perception/vae
-python train_vae.py --model_name my_trained_vae --dataset my_data
+python3 perception/vae/train_vae.py --model_name my_trained_vae --dataset my_data
 ```
 
 Inspect reconstructions:
 
 ```bash
-cd perception/vae
-python inspect_vae.py --model_dir models/my_trained_vae
+python3 perception/vae/inspect_vae.py --model_dir models/my_trained_vae
 ```
 
 ### Train SegFormer
@@ -114,7 +112,7 @@ python3 -m perception.segformer.evaluation \
 
 ```text
 CarlaAI/
-├── CarlaEnv/          # CARLA environments, planners, HUD, wrappers, controllers
+├── CarlaEnv/          # CARLA environments, planners, HUD, wrappers, and simulator glue
 ├── control/           # classical control modules
 │   ├── mpc/           # modular kinematic MPC implementation
 │   └── pid/           # baseline-facing PID runner/planner adapter
@@ -123,18 +121,25 @@ CarlaAI/
 │   ├── vae/           # VAE workflow
 │   └── common/        # shared perception helpers
 ├── learned_policies/  # learned driving policies
-│   └── rl/ppo/        # PPO policy, training, eval, and helpers
+│   └── rl/ppo/        # PPO policy network, train/eval logic, rewards, and helpers
 ├── config/            # example JSON configs
 ├── docs/              # notes, write-up, figures
 ├── models/            # checkpoints and logs
 ├── scripts/           # runnable entry points
 │   ├── ppo_train.py
 │   ├── ppo_eval.py
-│   ├── run_controller.py
 │   ├── ppo_inspect.py
+│   ├── run_controller.py
 │   ├── analyze_mpc_run.py
 │   └── carla_env_lab.py
 ```
+
+## Layout Notes
+
+- `CarlaEnv/` remains the runtime backbone for CARLA-specific environment and simulator integration.
+- `control/` contains the classical controller implementations that sit on top of the environment stack.
+- `perception/` contains representation and segmentation models plus shared adapters used by training/evaluation code.
+- `learned_policies/rl/ppo/` contains the PPO implementation itself; `scripts/` provides the stable CLI entrypoints.
 
 ## Config / Examples
 
